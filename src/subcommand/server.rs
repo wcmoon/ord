@@ -47,6 +47,7 @@ mod error;
 pub mod query;
 mod r;
 mod server_config;
+mod tiki;
 
 enum SpawnConfig {
   Https(AxumAcceptor),
@@ -284,6 +285,17 @@ impl Server {
           get(r::undelegated_content),
         )
         .route("/r/utxo/{outpoint}", get(r::utxo));
+
+      // tiki custom endpoints
+      let router = router
+        .route("/tikioutput/:output", get(tiki::tiki_output))
+        .route("/tikioutputs", post(tiki::tiki_outputs))
+        .route("/rune_deploy_encode", get(tiki::deploy_encode))
+        .route("/rune_commitment", get(tiki::rune_commitment))
+        .route("/rune_mint_encode", get(tiki::mint_encode))
+        .route("/runepayload/:txid", get(tiki::rune_payload))
+        .route("/addresses", post(Self::address));
+
 
       let proxiable_routes = Router::new()
         .route("/content/{inscription_id}", get(r::content))

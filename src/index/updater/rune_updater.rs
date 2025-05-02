@@ -10,6 +10,7 @@ pub(super) struct RuneUpdater<'a, 'tx, 'client> {
   pub(super) inscription_id_to_sequence_number: &'a Table<'tx, InscriptionIdValue, u32>,
   pub(super) minimum: Rune,
   pub(super) outpoint_to_balances: &'a mut Table<'tx, &'static OutPointValue, &'static [u8]>,
+  pub(super) outpoint_to_balances_persistent: &'a mut Table<'tx, &'static OutPointValue, &'static [u8]>,
   pub(super) rune_to_id: &'a mut Table<'tx, u128, RuneIdValue>,
   pub(super) runes: u64,
   pub(super) sequence_number_to_rune_id: &'a mut Table<'tx, u32, RuneIdValue>,
@@ -211,6 +212,9 @@ impl RuneUpdater<'_, '_, '_> {
 
       self
         .outpoint_to_balances
+        .insert(&outpoint.store(), buffer.as_slice())?;
+      self
+        .outpoint_to_balances_persistent
         .insert(&outpoint.store(), buffer.as_slice())?;
     }
 

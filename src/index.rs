@@ -64,6 +64,7 @@ define_table! { HOME_INSCRIPTIONS, u32, InscriptionIdValue }
 define_table! { INSCRIPTION_ID_TO_SEQUENCE_NUMBER, InscriptionIdValue, u32 }
 define_table! { INSCRIPTION_NUMBER_TO_SEQUENCE_NUMBER, i32, u32 }
 define_table! { OUTPOINT_TO_RUNE_BALANCES, &OutPointValue, &[u8] }
+define_table! { OUTPOINT_TO_RUNE_BALANCES_PERSISTENT, &OutPointValue, &[u8] }
 define_table! { OUTPOINT_TO_UTXO_ENTRY, &OutPointValue, &UtxoEntry }
 define_table! { RUNE_ID_TO_RUNE_ENTRY, RuneIdValue, RuneEntryValue }
 define_table! { RUNE_TO_RUNE_ID, u128, RuneIdValue }
@@ -318,6 +319,7 @@ impl Index {
         tx.open_table(INSCRIPTION_ID_TO_SEQUENCE_NUMBER)?;
         tx.open_table(INSCRIPTION_NUMBER_TO_SEQUENCE_NUMBER)?;
         tx.open_table(OUTPOINT_TO_RUNE_BALANCES)?;
+        tx.open_table(OUTPOINT_TO_RUNE_BALANCES_PERSISTENT)?;
         tx.open_table(OUTPOINT_TO_UTXO_ENTRY)?;
         tx.open_table(RUNE_ID_TO_RUNE_ENTRY)?;
         tx.open_table(RUNE_TO_RUNE_ID)?;
@@ -1036,6 +1038,47 @@ impl Index {
     let rtx = self.database.begin_read()?;
 
     let outpoint_to_balances = rtx.open_table(OUTPOINT_TO_RUNE_BALANCES)?;
+
+    let id_to_rune_entries = rtx.open_table(RUNE_ID_TO_RUNE_ENTRY)?;
+
+    let Some(balances) = outpoint_to_balances.get(&outpoint.store())? else {
+      return Ok(Some(BTreeMap::new()));
+    };
+
+    let balances_buffer = balances.value();
+
+    let mut balances = BTreeMap::new();
+    let mut i = 0;
+    while i < balances_buffer.len() {
+      let ((id, amount), length) = Index::decode_rune_balance(&balances_buffer[i..]).unwrap();
+      i += length;
+
+      let entry = RuneEntry::load(id_to_rune_entries.get(id.store())?.unwrap().value());
+
+      balances.insert(
+        entry.spaced_rune,
+        Pile {
+          amount,
+          divisibility: entry.divisibility,
+          symbol: entry.symbol,
+        },
+      );
+    }
+
+    Ok(Some(balances))
+  }
+
+  pub fn get_tiki_rune_balances_for_output(
+    &self,
+    outpoint: OutPoint,
+  ) -> Result<Option<BTreeMap<SpacedRune, Pile>>> {
+    if !self.index_runes {
+      return Ok(None);
+    }
+
+    let rtx = self.database.begin_read()?;
+
+    let outpoint_to_balances = rtx.open_table(OUTPOINT_TO_RUNE_BALANCES_PERSISTENT)?;
 
     let id_to_rune_entries = rtx.open_table(RUNE_ID_TO_RUNE_ENTRY)?;
 
@@ -2556,6 +2599,77 @@ impl Index {
       txout,
     )))
   }
+
+  pub(crate) fn get_tiki_output_info(&self, outpoint: OutPoint) -> Result<Option<(api::Output, TxOut)>> {
+    let sat_ranges = self.list(outpoint)?;
+
+    let confirmations;
+    let indexed;
+    let spent;
+    let txout;
+
+    if outpoint == OutPoint::null() || outpoint == unbound_outpoint() {
+      let mut value = 0;
+
+      if let Some(ranges) = &sat_ranges {
+        for (start, end) in ranges {
+          value += end - start;
+        }
+      }
+
+      confirmations = 0;
+      indexed = true;
+      spent = false;
+      txout = TxOut {
+        value: Amount::from_sat(value),
+        script_pubkey: ScriptBuf::new(),
+      };
+    } else {
+      indexed = self.contains_output(&outpoint)?;
+
+      if let Some(result) = self.get_unspent_or_unconfirmed_output(&outpoint.txid, outpoint.vout)? {
+        confirmations = result.confirmations;
+        spent = false;
+        txout = TxOut {
+          value: result.value,
+          script_pubkey: ScriptBuf::from_bytes(result.script_pub_key.hex),
+        };
+      } else {
+        let Some(result) = self.get_transaction_info(&outpoint.txid)? else {
+          return Ok(None);
+        };
+
+        let Some(output) = result.vout.into_iter().nth(outpoint.vout.into_usize()) else {
+          return Ok(None);
+        };
+
+        confirmations = result.confirmations.unwrap_or_default();
+        spent = true;
+        txout = TxOut {
+          value: output.value,
+          script_pubkey: ScriptBuf::from_bytes(output.script_pub_key.hex),
+        };
+      }
+    };
+
+    let inscriptions = self.get_inscriptions_for_output(outpoint)?;
+
+    let runes = self.get_tiki_rune_balances_for_output(outpoint)?;
+
+    Ok(Some((
+      api::Output::new(
+        self.settings.chain(),
+        confirmations,
+        inscriptions,
+        outpoint,
+        txout.clone(),
+        indexed,
+        runes,
+        sat_ranges,
+        spent,
+      ),
+      txout,
+    )))
 }
 
 #[cfg(test)]
