@@ -294,7 +294,7 @@ impl Server {
         .route("/rune_commitment", get(tiki::rune_commitment))
         .route("/rune_mint_encode", get(tiki::mint_encode))
         .route("/runepayload/:txid", get(tiki::rune_payload))
-        .route("/addresses", post(Self::address));
+        .route("/addresses", post(tiki::addresses));
 
 
       let proxiable_routes = Router::new()
