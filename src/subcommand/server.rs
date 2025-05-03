@@ -288,12 +288,12 @@ impl Server {
 
       // tiki custom endpoints
       let router = router
-        .route("/tikioutput/:output", get(tiki::tiki_output))
+        .route("/tikioutput/{output}", get(tiki::tiki_output))
         .route("/tikioutputs", post(tiki::tiki_outputs))
         .route("/rune_deploy_encode", get(tiki::deploy_encode))
         .route("/rune_commitment", get(tiki::rune_commitment))
         .route("/rune_mint_encode", get(tiki::mint_encode))
-        .route("/runepayload/:txid", get(tiki::rune_payload))
+        .route("/runepayload/{txid}", get(tiki::rune_payload))
         .route("/addresses", post(Self::addresses));
 
 
