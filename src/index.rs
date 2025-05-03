@@ -2670,6 +2670,7 @@ impl Index {
       ),
       txout,
     )))
+  }
 }
 
 #[cfg(test)]

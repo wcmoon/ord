@@ -294,7 +294,7 @@ impl Server {
         .route("/rune_commitment", get(tiki::rune_commitment))
         .route("/rune_mint_encode", get(tiki::mint_encode))
         .route("/runepayload/:txid", get(tiki::rune_payload))
-        .route("/addresses", post(tiki::addresses));
+        .route("/addresses", post(Self::addresses));
 
 
       let proxiable_routes = Router::new()
@@ -1081,6 +1081,34 @@ impl Server {
 
   async fn install_script() -> Redirect {
     Redirect::to("https://raw.githubusercontent.com/ordinals/ord/master/install.sh")
+  }
+
+  async fn addresses(
+    Extension(server_config): Extension<Arc<ServerConfig>>,
+    Extension(index): Extension<Arc<Index>>,
+    AcceptJson(accept_json): AcceptJson,
+    Json(addresses): Json<Vec<Address<NetworkUnchecked>>>
+  ) -> ServerResult {
+    task::block_in_place(|| {
+      Ok(if accept_json {
+        let mut infos = Vec::new();
+        for address in addresses {
+          let address = address
+            .require_network(server_config.chain.network())
+            .map_err(|err| ServerError::BadRequest(err.to_string()))?;
+
+          let Some(info) = Self::address_info(&index, &address)? else {
+            return Err(ServerError::NotFound(
+              "this server has no address index".to_string(),
+            ));
+          };
+          infos.push(info)
+        }
+        Json(infos).into_response()
+      } else {
+        StatusCode::NOT_FOUND.into_response()
+      })
+    })
   }
 
   async fn address(

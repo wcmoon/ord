@@ -1,7 +1,7 @@
 use super::*;
 
 #[derive(serde::Deserialize)]
-struct DeployQuery {
+pub(super) struct DeployQuery {
   rune: String,
   symbol: Option<String>,
   divisibility: Option<String>,
@@ -15,12 +15,12 @@ struct DeployQuery {
 }
 
 #[derive(serde::Deserialize)]
-struct MintQuery {
+pub(super) struct MintQuery {
   id: String,
 }
 
 #[derive(serde::Deserialize)]
-struct CommitmentQuery {
+pub(super) struct CommitmentQuery {
   rune: String,
 }
 
@@ -111,7 +111,7 @@ pub(super) async fn tiki_output(
   AcceptJson(accept_json): AcceptJson,
 ) -> ServerResult {
   task::block_in_place(|| {
-    let (output_info) = index
+    let (output_info, _) = index
       .get_tiki_output_info(outpoint)?
       .ok_or_not_found(|| format!("output {outpoint}"))?;
 
@@ -139,34 +139,6 @@ pub(super) async fn tiki_outputs(
         response.push(output_info);
       }
       Json(response).into_response()
-    } else {
-      StatusCode::NOT_FOUND.into_response()
-    })
-  })
-}
-
-pub(super) async fn addresses(
-  Extension(server_config): Extension<Arc<ServerConfig>>,
-  Extension(index): Extension<Arc<Index>>,
-  AcceptJson(accept_json): AcceptJson,
-  Json(addresses): Json<Vec<Address<NetworkUnchecked>>>
-) -> ServerResult {
-  task::block_in_place(|| {
-    Ok(if accept_json {
-      let mut infos = Vec::new();
-      for address in addresses {
-        let address = address
-          .require_network(server_config.chain.network())
-          .map_err(|err| ServerError::BadRequest(err.to_string()))?;
-
-        let Some(info) = index.address_info(&index, &address)? else {
-          return Err(ServerError::NotFound(
-            "this server has no address index".to_string(),
-          ));
-        };
-        infos.push(info)
-      }
-      Json(infos).into_response()
     } else {
       StatusCode::NOT_FOUND.into_response()
     })
